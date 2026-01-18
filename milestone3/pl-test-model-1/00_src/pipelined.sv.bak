@@ -1,0 +1,400 @@
+module pipelined (
+    input  logic         i_clk     ,
+    input  logic         i_reset   ,
+	 output logic [31:0]  o_pc_debug,
+    output logic         o_insn_vld, o_ctrl, o_mispred,
+    output logic [31:0]  o_io_ledr ,
+    output logic [31:0]  o_io_ledg ,
+    output logic [ 6:0]  o_io_hex0 ,
+    output logic [ 6:0]  o_io_hex1 ,
+    output logic [ 6:0]  o_io_hex2 ,
+    output logic [ 6:0]  o_io_hex3 ,
+    output logic [ 6:0]  o_io_hex4 ,
+    output logic [ 6:0]  o_io_hex5 ,
+    output logic [ 6:0]  o_io_hex6 ,
+    output logic [ 6:0]  o_io_hex7 ,
+	 output logic [31:0]  o_io_lcd  ,
+	 input  logic [31:0]  i_io_sw   
+	 
+    
+);
+
+  logic [31:0] pc_next, pc, pc_four_if, alu_data;
+  logic [31:0] instr;
+  logic [31:0] rs1_data, rs2_data, imm;
+  logic [31:0] operand_a, operand_b;
+  logic [31:0] ld_data;
+  logic [31:0] wb_data;
+  logic br_less, br_equal, rd_wren, br_un, lsu_wren, opa_sel, opb_sel,mem_wren;
+  logic [1:0] wb_sel;
+  logic [3:0] alu_op, i_bmask;
+
+//-------------------------------------------------------------------------------
+// IF STAGE
+//-------------------------------------------------------------------------------
+  logic pc_en;
+	mux2 #(32) pc_select 
+	 (
+		.s0(pc_four_if),
+		.s1(alu_data),
+		.sel(pc_sel_ex),
+		.y(pc_next)
+	 );
+
+	PC pc_pl(
+		.d(pc_next),
+		.clk(i_clk),
+		.en(pc_en),
+		.rs(~i_reset),
+		.q(pc)
+);
+
+ 
+	PCADD4 pc4_if(.b(pc), .sum(pc_four_if) );	 
+	
+
+	imem 	instmemory(					
+	.i_addr(pc),					
+	.o_rdata(instr));						
+	 
+//-------------------------------------------------------------------------------
+// IF/ID STAGE
+//-------------------------------------------------------------------------------
+logic stall_ifid, flush_ifid;
+logic [31:0] pc_id, instr_id;
+
+	if_id_reg if_id_u
+	(
+				.clk(i_clk),
+				.reset(~i_reset),
+				.stall_ifid(stall_ifid),
+				.flush_ifid(flush_ifid),
+				.pc_if(pc),
+				.instr_if(instr),
+				.pc_id(pc_id),
+				.instr_id(instr_id)
+	);
+	
+ 
+
+//-------------------------------------------------------------------------------
+// ID STAGE
+//-------------------------------------------------------------------------------
+logic [4:0] rd_wb; // nam o MEM/WB nhung su o day nen khai bao truoc 
+logic rd_wren_wb;
+logic [2:0] funct3_id;
+logic o_ctrl_id, o_insn_vld_id, B_id, J_id, JALR_id;
+
+	CTU ControlUnit
+	(
+	.i_instr(instr_id),
+	.i_br_less(), // tuan 1 chua su dung 
+	.i_br_equal(), // // tuan 1 chua su dung 
+	.o_insn_vld(o_insn_vld_id),
+	.o_rd_wren(rd_wren),
+	.o_br_un(br_un), 
+	.o_mem_wren(lsu_wren),
+	.o_pc_sel(),  // khong su dung duoc  
+	.o_opa_sel(opa_sel), 	
+	.o_opb_sel(opb_sel), 
+	.o_wb_sel(wb_sel),
+	.o_alu_op(alu_op),
+	.funct3_id(funct3_id),
+	.o_ctrl(o_ctrl_id),
+	.B_id(B_id),
+	.J_id(J_id),
+	.JALR_id(JALR_id)
+);
+
+
+	 
+	regfile Regfile
+	(
+		.i_clk(i_clk),
+		.i_reset(~i_reset),
+		.i_wren(rd_wren_wb),
+		.i_rs1_addr(instr_id[19:15]),
+		.i_rs2_addr(instr_id[24:20]),
+		.i_rd_addr(rd_wb),
+		.i_rd_data(wb_data),
+		.o_rs1_data(rs1_data),
+		.o_rs2_data(rs2_data)
+	);
+
+ImmGen immgen_sg(.instr(instr_id),.imm(imm));
+	 
+//-------------------------------------------------------------------------------
+// ID/EX STAGE
+//-------------------------------------------------------------------------------
+logic stall_idex, flush_idex, o_ctrl_ex, o_insn_vld_ex;
+logic [31:0] pc_ex, rs1_data_ex, rs2_data_ex, imm_ex;
+logic [4:0]  rd_ex;
+logic [3:0] alu_op_ex;
+logic [2:0] funct3_ex;
+logic [1:0] wb_sel_ex;
+logic B_ex, J_ex, JALR_ex;
+logic mem_wren_ex,  rd_wren_ex, opa_sel_ex, opb_sel_ex, br_un_ex;
+assign stall_idex = 1'b0; // NON_FORWARDING
+
+	id_ex_reg id_ex_u
+	(
+					.clk(i_clk),
+					.reset(~i_reset),
+					.stall_idex(stall_idex),
+					.flush_idex(flush_idex),
+					.i_insn_vld_id(o_insn_vld_id),
+					.i_ctrl_id(o_ctrl_id),
+					
+				// week2		
+					.funct3_id(funct3_id),
+					.B_id(B_id),
+					.J_id(J_id),
+					.JALR_id(JALR_id),
+					
+					.pc_id(pc_id),
+					.rs1_data_id(rs1_data),
+					.rs2_data_id(rs2_data),
+					.imm_id(imm),
+					.rd_id(instr_id[11:7]),
+					
+					.alu_op_id(alu_op),
+					.mem_wren_id(lsu_wren),
+					.wb_sel_id(wb_sel),
+					.rd_wren_id(rd_wren),
+					.opa_sel_id(opa_sel),   
+					.opb_sel_id(opb_sel),   
+					.br_un_id(br_un), 
+					
+					// output
+					.o_insn_vld_ex(o_insn_vld_ex),
+					.o_ctrl_ex(o_ctrl_ex),
+					
+					//week2 
+					.funct3_ex(funct3_ex),
+					.B_ex(B_ex),
+					.J_ex(J_ex),
+					.JALR_ex(JALR_ex),
+					
+					.pc_ex(pc_ex),
+					.rs1_data_ex(rs1_data_ex),
+					.rs2_data_ex(rs2_data_ex),
+					.imm_ex(imm_ex),
+					.rd_ex(rd_ex),
+					
+					.alu_op_ex(alu_op_ex),
+					.mem_wren_ex(mem_wren_ex),
+					.wb_sel_ex(wb_sel_ex),
+					.rd_wren_ex(rd_wren_ex),
+					.opa_sel_ex(opa_sel_ex),   
+					.opb_sel_ex(opb_sel_ex),   
+					.br_un_ex(br_un_ex)    
+	);
+//-------------------------------------------------------------------------------
+// EX STAGE
+//-------------------------------------------------------------------------------
+logic o_take_branch, pc_sel_ex;
+
+	 BRC branch_compare(
+	.i_rs1_data(rs1_data_ex),
+	.i_rs2_data(rs2_data_ex),
+	.i_br_un(br_un_ex),
+	.o_br_less(br_less),
+	.o_br_equal(br_equal));
+	 
+//	assign operand_a = (opa_sel) ? pc : rs1_data;
+	mux2 mux2_32_opa (.sel(opa_sel_ex), .s0(rs1_data_ex), .s1(pc_ex), .y(operand_a));
+//	assign operand_b = (opb_sel) ? imm : rs2_data;
+	mux2 mux2_32_opb (.sel(opb_sel_ex), .s0(rs2_data_ex), .s1(imm_ex), .y(operand_b));
+
+		ALU alu 
+	(
+			.i_op_a(operand_a), 
+			.i_op_b(operand_b),
+			.i_alu_op(alu_op_ex),
+			.o_alu_data(alu_data)
+	);
+	
+	branch_predict brc_predict_ex(
+						.i_is_branch(B_ex),
+						.i_is_jal(J_ex),
+						.i_is_jalr(JALR_ex),
+						.i_funct3(funct3_ex),
+						.i_br_less(br_less),
+						.i_br_equal(br_equal),
+						.o_take_branch(o_take_branch)
+	);
+assign pc_sel_ex = o_take_branch;
+//-------------------------------------------------------------------------------
+// EX/MEM STAGE
+//-------------------------------------------------------------------------------
+logic stall_exmem, flush_exmem, o_insn_vld_mem, o_ctrl_mem, o_mispred_mem;
+logic [31:0] pc_mem;
+logic [31:0] alu_result_mem, rs2_data_mem;
+logic [4:0] rd_mem;
+logic [2:0] funct3_mem;
+logic [1:0] wb_sel_mem;
+logic mem_wren_mem, rd_wren_mem;
+assign stall_exmem = 1'b0; // NON_FORWARDING
+
+
+	ex_mem_reg ex_mem_u
+	(
+					.clk(i_clk),
+					.reset(~i_reset),
+					.stall_exmem(stall_exmem),
+					.flush_exmem(flush_exmem),
+					.i_insn_vld_ex(o_insn_vld_ex),
+					.i_ctrl_ex(o_ctrl_ex),
+					.i_mispred_ex(mispred_ex),
+					
+					.funct3_ex(funct3_ex), // tuan 2
+					.pc_ex(pc_ex),
+					.alu_result_ex(alu_data),
+					.rs2_data_ex(rs2_data_ex),
+					.rd_ex(rd_ex),
+					// signal of CTU ID -> MEM
+					.mem_wren_ex(mem_wren_ex),
+					.wb_sel_ex(wb_sel_ex),
+					.rd_wren_ex(rd_wren_ex),
+					
+					// output
+					.o_insn_vld_mem(o_insn_vld_mem),
+					.o_ctrl_mem(o_ctrl_mem),
+					.o_mispred_mem(o_mispred_mem),
+					
+					.funct3_mem(funct3_mem),
+					.pc_mem(pc_mem),
+					.alu_result_mem(alu_result_mem),
+					.rs2_data_mem(rs2_data_mem),
+					.rd_mem(rd_mem),
+					
+					.mem_wren_mem(mem_wren_mem),
+					.wb_sel_mem(wb_sel_mem),
+					.rd_wren_mem(rd_wren_mem)					
+	);
+	
+//-------------------------------------------------------------------------------
+// MEM STAGE
+//-------------------------------------------------------------------------------
+logic [31:0] pc_four_mem; 
+
+	PCADD4 pc4_mem(.b(pc_mem), .sum(pc_four_mem));	 
+	
+	LSU lsu
+	(
+		.i_clk(i_clk),
+		.i_reset(~i_reset),
+		.i_lsu_wren(mem_wren_mem),  //
+		.i_funct3(funct3_mem),	 // dang sai chua sua
+		.i_lsu_addr(alu_result_mem),//
+		.i_st_data(rs2_data_mem),	 // 
+		.i_io_sw(i_io_sw),
+		.o_ld_data(ld_data),
+		.o_io_ledr(o_io_ledr),
+		.o_io_ledg(o_io_ledg),
+		.o_io_lcd(o_io_lcd),
+		.o_io_hex0(o_io_hex0),
+		.o_io_hex1(o_io_hex1),
+		.o_io_hex2(o_io_hex2),
+		.o_io_hex3(o_io_hex3),
+		.o_io_hex4(o_io_hex4),
+		.o_io_hex5(o_io_hex5),
+		.o_io_hex6(o_io_hex6),
+		.o_io_hex7(o_io_hex7)
+	);
+
+//-------------------------------------------------------------------------------
+// MEM/WB STAGE
+//-------------------------------------------------------------------------------
+logic stall_memwb, flush_memwb, o_insn_vld_wb, o_ctrl_wb, o_mispred_wb, pc_en_n;
+logic [31:0] alu_result_wb, ld_data_wb, pc_four_wb;
+logic [31:0] pc_wb;
+logic [1:0] wb_sel_wb;
+assign flush_memwb = 1'b0; // NON_FORWARDING
+assign stall_memwb = 1'b0; // NON_FORWARDING
+	mem_wb_reg mem_wb_u
+	(
+					.clk(i_clk),
+					.reset(~i_reset),
+					.stall_memwb(stall_memwb),
+					.flush_memwb(flush_memwb),
+					.i_insn_vld_mem(o_insn_vld_mem),
+					.i_ctrl_mem(o_ctrl_mem),
+					.i_mispred_mem(o_mispred_mem),
+					
+					.pc_mem(pc_mem),
+					.pc_four_mem(pc_four_mem),
+					.alu_result_mem(alu_result_mem),
+					.ld_data(ld_data),
+					.rd_mem(rd_mem),
+					// CTU
+					.rd_wren_mem(rd_wren_mem),
+					.wb_sel_mem(wb_sel_mem),
+					
+					// output 
+					.o_insn_vld_wb(o_insn_vld_wb),
+					.o_ctrl_wb(o_ctrl_wb),
+					.o_mispred_wb(o_mispred_wb),
+					
+					.pc_wb(pc_wb),
+					.alu_result_wb(alu_result_wb),
+					.ld_data_wb(ld_data_wb),
+					.pc_four_wb(pc_four_wb),
+					.rd_wb(rd_wb),
+					.rd_wren_wb(rd_wren_wb),
+					.wb_sel_wb(wb_sel_wb)
+	);
+	
+///////////////////////////////////////////////////////////////////////////
+// Hazard unit
+///////////////////////////////////////////////////////////////////////////	
+	logic mispred_ex;
+	hazard_unit hdu (
+    .i_clk        (i_clk),
+    .i_reset      (~i_reset),
+
+    .id_valid     (o_insn_vld_id),
+    .id_rs1       (instr_id[19:15]),
+    .id_rs2       (instr_id[24:20]),
+    .id_rd_wen    (rd_wren),
+    .id_rd        (instr_id[11:7]),
+	 
+
+    .wb_valid     (o_insn_vld_wb),
+    .wb_rd_wen    (rd_wren_wb),
+    .wb_rd        (rd_wb),
+
+    .ex_valid        (o_insn_vld_ex),
+    .ex_is_ctrl      (o_ctrl_ex),          // branch/jump?
+    .ex_take_branch  (o_take_branch),  // từ BRC/CTU
+
+    .o_stall_pc    (pc_en_n),      // sau đó pc_en = ~pc_en_n nếu en active-high
+    .o_stall_ifid  (stall_ifid),
+    .o_flush_ifid  (flush_ifid),
+    .o_flush_idex  (flush_idex),
+    .o_flush_exmem (flush_exmem),
+    .o_mispred_ex  (mispred_ex)
+);
+
+// PC enable
+assign pc_en = ~pc_en_n;
+	
+//-------------------------------------------------------------------------------
+// WB STAGE
+//-------------------------------------------------------------------------------
+	
+	MUX4_32 mux4_32_wb_sel(
+		.sel(wb_sel_wb),
+		.d0(ld_data_wb),
+		.d1(alu_result_wb),
+		.d2(pc_four_wb),
+		.d3(32'b0),
+		.z(wb_data)
+);
+	assign o_pc_debug= pc_wb;
+	assign o_insn_vld = o_insn_vld_wb;
+	assign o_ctrl = o_ctrl_wb;
+	assign o_mispred = o_mispred_wb;
+	
+
+endmodule 

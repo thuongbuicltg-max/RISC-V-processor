@@ -1,0 +1,39 @@
+module regfile (
+		input logic 			i_reset, i_wren, i_clk, 
+		input logic  [4:0] 	i_rs1_addr, i_rs2_addr, i_rd_addr, 
+		input logic  [31:0] 	i_rd_data,
+		output logic [31:0] 	o_rs1_data, o_rs2_data
+);
+
+logic [31:0] EN_mask; 
+logic [31:0] EN;
+
+DECODER532 dec5_32_reg(
+		.en(i_wren),
+		.a(i_rd_addr),
+		.y(EN_mask)
+);
+assign EN = EN_mask & ~32'h0000_0001; // ko cho ghi vao x0
+wire [31:0] r0 = 32'b0; 
+logic [31:0] r [31:1]; 
+
+	genvar i; 
+	generate 
+		for (i=1; i<32; i=i+1) begin: G_RF
+			register u_register32_reg(.clk(i_clk), .rst(i_reset), .en(EN[i]), .d(i_rd_data), .q(r[i]));
+		end 
+	endgenerate 
+
+// Mảng trung gian cho MUX đọc: bank[0]=r0, bank[1..31]=r[1..31]
+logic [31:0] bank [31:0];
+assign bank[0] = r0;
+generate
+  for (i = 1; i < 32; i = i + 1) begin : G_BANK
+    assign bank[i] = r[i];
+  end
+endgenerate	
+	
+MUX321_32 muxrs1_reg(.d(bank), .s(i_rs1_addr), .y(o_rs1_data));
+MUX321_32 muxrs2_reg(.d(bank), .s(i_rs2_addr), .y(o_rs2_data));
+
+endmodule 

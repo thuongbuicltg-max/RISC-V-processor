@@ -1,0 +1,128 @@
+//============================================================
+//  Hazard Unit - Non-forwarding (Data + Control hazards)
+//  - Data hazards: dùng scoreboard busy[31:0]
+//  - Control hazards: always-not-taken, flush khi branch/jump taken
+//============================================================
+module hazard_unit #(
+    parameter NREG = 32
+) (
+    input  logic        i_clk,
+    input  logic        i_reset,          // active-high
+
+    // ---------- ID stage ----------
+    input  logic        id_valid,         // insn_vld_ID
+    input  logic [4:0]  id_rs1,
+    input  logic [4:0]  id_rs2,
+    input  logic        id_rd_wen,        // lệnh ở ID sẽ ghi rd?
+    input  logic [4:0]  id_rd,            // rd của lệnh ID
+
+    // ---------- WB stage ----------
+    input  logic        wb_valid,         // insn_vld_WB
+    input  logic        wb_rd_wen,        // lệnh ở WB có ghi rd không
+    input  logic [4:0]  wb_rd,            // rd của lệnh WB
+
+    // ---------- EX stage (control) ----------
+    input  logic        ex_valid,         // insn_vld_EX
+    input  logic        ex_is_ctrl,       // lệnh EX là branch/jump ?
+    input  logic        ex_take_branch,   // kết quả nhánh thực tế ở EX (1 = taken)
+
+    // ---------- Outputs: điều khiển pipeline ----------
+    output logic        o_stall_pc,       // dùng cho PC.en
+    output logic        o_stall_ifid,     // IF/ID giữ nguyên
+    output logic        o_flush_ifid,     // biến lệnh ở IF/ID thành NOP
+    output logic        o_flush_idex,     // biến lệnh ở ID/EX thành NOP
+    output logic        o_flush_exmem,    // dùng khi muốn clear lệnh ở EX/MEM (sau branch)
+    output logic        o_mispred_ex      // 1 chu kỳ tại EX nếu mispredict
+);
+
+    //========================================================
+    // 1. Scoreboard cho data hazards
+    //========================================================
+    logic [NREG-1:0] busy;  // busy[i] = 1 nếu x[i] đang chờ được ghi
+
+    integer i;
+    always_ff @(posedge i_clk or posedge i_reset) begin
+  if (i_reset) begin
+    busy <= '0;
+  end else begin
+    // Khi mispredict: xóa toàn bộ scoreboard cho an toàn
+    if (ctrl_mispredict) begin
+      busy <= '0;
+    end else begin
+      // clear khi WB ghi xong
+      if (wb_valid && wb_rd_wen && (wb_rd != 5'd0)) begin
+        busy[wb_rd] <= 1'b0;
+      end
+      // set khi ID decode xong một lệnh sẽ ghi rd
+      if (id_valid && id_rd_wen && (id_rd != 5'd0)) begin
+        busy[id_rd] <= 1'b1;
+      end
+    end
+  end
+end
+
+
+    // Phát hiện data hazard tại ID
+    logic hazard_rs1, hazard_rs2, data_hazard;
+
+    always_comb begin
+        hazard_rs1  = 1'b0;
+        hazard_rs2  = 1'b0;
+
+        if (id_valid && (id_rs1 != 5'd0) && busy[id_rs1]) begin
+            hazard_rs1 = 1'b1;
+        end
+        if (id_valid && (id_rs2 != 5'd0) && busy[id_rs2]) begin
+            hazard_rs2 = 1'b1;
+        end
+    end
+
+    assign data_hazard = hazard_rs1 | hazard_rs2;
+
+    //========================================================
+    // 2. Control hazard (always not-taken)
+    //========================================================
+    // Predictor: luôn dự đoán NOT TAKEN
+    // => mispredict nếu branch/jump ở EX thực tế taken
+    logic ctrl_mispredict;
+
+    assign ctrl_mispredict = ex_valid && ex_is_ctrl && ex_take_branch;
+
+    // Tín hiệu output 1 chu kỳ tại EX, sẽ được pipeline tới WB thành o_mispred
+    assign o_mispred_ex = ctrl_mispredict;
+
+    //========================================================
+    // 3. Tạo tín hiệu stall / flush cho các stage
+    //========================================================
+
+    // --- Data hazard (non-forwarding) ---
+    // Khi có data_hazard:
+    //  - Giữ PC và IF/ID (không cho lệnh mới vào pipeline)
+    //  - Flush ID/EX để bơm 1 bubble vào EX
+    logic stall_pc_dh, stall_ifid_dh, flush_ifid_dh, flush_idex_dh;
+
+    assign stall_pc_dh   = data_hazard;
+    assign stall_ifid_dh = data_hazard;
+    assign flush_ifid_dh = 1'b0;       // không cần xóa IF/ID, chỉ giữ nguyên
+    assign flush_idex_dh = data_hazard;
+
+    // --- Control hazard ---
+    // Khi mispredict:
+    //  - Flush IF/ID, ID/EX (các lệnh sau branch)
+    //  - Có thể flush EX/MEM nếu bạn commit branch ở MEM
+    logic stall_pc_ch, stall_ifid_ch, flush_ifid_ch, flush_idex_ch, flush_exmem_ch;
+
+    assign stall_pc_ch    = 1'b0;          // PC sẽ được CTU chọn sang target, không "stall"
+    assign stall_ifid_ch  = 1'b0;          // không cần giữ IF/ID, vì sẽ flush
+    assign flush_ifid_ch  = ctrl_mispredict;
+    assign flush_idex_ch  = ctrl_mispredict;
+    assign flush_exmem_ch = 1'b0;          // tuỳ thiết kế, nếu branch kết thúc ở MEM thì set = ctrl_mispredict
+
+    // --- OR hai loại hazard lại ---
+    assign o_stall_pc    = stall_pc_dh   | stall_pc_ch;
+    assign o_stall_ifid  = stall_ifid_dh | stall_ifid_ch;
+    assign o_flush_ifid  = flush_ifid_dh | flush_ifid_ch;
+    assign o_flush_idex  = flush_idex_dh | flush_idex_ch;
+    assign o_flush_exmem = flush_exmem_ch; // hiện tại chỉ dùng cho control
+
+endmodule 
