@@ -402,5 +402,159 @@ endmodule
 145   task automatic deassert_reset(input int reset_port_num = -1);
 146     if (reset_port_num >= int'(__num_reset_ports__)) begin
 147       $fatal(1, "[%0s] Cannot deassert reset to unexistent port number %0d. This interface only has reset port 0-%0d.", __name__, reset_port_num, (__num_reset_ports__ - 1));
+    end
+149     $display("[%0s] Deassert Reset", __name__);
+150     if (get_reset_scheme() inside {SYNC_ASSERT_ASYNC_DEASSERT, ASYNC_ASSERT_ASYNC_DEASSERT}) begin
+151       if (reset_port_num != -1) begin
+152         __internal_reset__[reset_port_num] <= 1'b0;
+153       end else begin
+154         __internal_reset__ <= {NUM_RESET_PORTS{1'b0}};
+155       end
+156     end
+157     else begin
+158       if (reset_port_num != -1) begin
+159         reset_cb.__internal_reset__[reset_port_num] <= 1'b0;
+160       end else begin
+161         reset_cb.__internal_reset__ <= {NUM_RESET_PORTS{1'b0}};
+162       end
+163     end
+164   endtask: deassert_reset
+165 
+166   task automatic apply_reset(input int reset_port_num = -1, int unsigned reset_cycle = 5);
+167     int async_delay = $urandom_range(1, int'(__clk_period_ns__/2));
+168 
+169     if (__active_clk__ && (!__clk_enabled__)) begin
+170       $fatal(1, "[%0s] Cannot apply reset when clock is inactive. Please use <clk_rst_if_name>.enable_clk() before apply_reset().", __name__);
+171     end
+172 
+173     @(posedge __internal_clk__);
+174     if (__reset_scheme__ == ASYNC_ASSERT_SYNC_DEASSERT || __reset_scheme__ == ASYNC_ASSERT_ASYNC_DEASSERT) begin
+175       #(async_delay * 1ns);
+176     end
+177 
+178     assert_reset(reset_port_num);
+179 
+180     repeat(reset_cycle) begin
+181       @(posedge __internal_clk__);
+182     end
+183 
+184     if (__reset_scheme__ == SYNC_ASSERT_ASYNC_DEASSERT || __reset_scheme__ == ASYNC_ASSERT_ASYNC_DEASSERT) begin
+185       #(async_delay * 1ns);
+186     end
+187 
+188     // Deassert reset
+189     deassert_reset(reset_port_num);
+190 
+191   endtask: apply_reset
+192 
+193   // Clock gen block
+194   initial begin
+195     if (__active_clk__) begin
+196       clk = 1'b0;
+197       forever begin
+198         if (__clk_enabled__) begin
+199           #(__clk_period_ns__ / 2.0) clk = ~clk;
+200         end else begin
+201           clk = 1'b0;
+202           wait(__clk_enabled__);
+203           if (get_clk_rise_on_enable()) clk = 1'b1;
+204         end
+205       end  // forever
+206     end // if (__active_clk__)
+207     else begin
+208       clk = 1'bz;
+209     end
+210   end  // initial
+211 
+212   // Reset gen block
+213   initial begin
+214     __internal_reset__ = {NUM_RESET_PORTS{1'b0}};
+215   end
+216 
+217   function automatic realtime get_clk_period_ns(input real i_freq_khz);
+218     return real'((1.0/i_freq_khz) * 1_000_000) * 1ns;
+219   endfunction: get_clk_period_ns
+220 
+221 endinterface: clk_rst_if
+222 
+223 `endif  // CLK_RST_IF_SV
+    end
+149     $display("[%0s] Deassert Reset", __name__);
+150     if (get_reset_scheme() inside {SYNC_ASSERT_ASYNC_DEASSERT, ASYNC_ASSERT_ASYNC_DEASSERT}) begin
+151       if (reset_port_num != -1) begin
+152         __internal_reset__[reset_port_num] <= 1'b0;
+153       end else begin
+154         __internal_reset__ <= {NUM_RESET_PORTS{1'b0}};
+155       end
+156     end
+157     else begin
+158       if (reset_port_num != -1) begin
+159         reset_cb.__internal_reset__[reset_port_num] <= 1'b0;
+160       end else begin
+161         reset_cb.__internal_reset__ <= {NUM_RESET_PORTS{1'b0}};
+162       end
+163     end
+164   endtask: deassert_reset
+165 
+166   task automatic apply_reset(input int reset_port_num = -1, int unsigned reset_cycle = 5);
+167     int async_delay = $urandom_range(1, int'(__clk_period_ns__/2));
+168 
+169     if (__active_clk__ && (!__clk_enabled__)) begin
+170       $fatal(1, "[%0s] Cannot apply reset when clock is inactive. Please use <clk_rst_if_name>.enable_clk() before apply_reset().", __name__);
+171     end
+172 
+173     @(posedge __internal_clk__);
+174     if (__reset_scheme__ == ASYNC_ASSERT_SYNC_DEASSERT || __reset_scheme__ == ASYNC_ASSERT_ASYNC_DEASSERT) begin
+175       #(async_delay * 1ns);
+176     end
+177 
+178     assert_reset(reset_port_num);
+179 
+180     repeat(reset_cycle) begin
+181       @(posedge __internal_clk__);
+182     end
+183 
+184     if (__reset_scheme__ == SYNC_ASSERT_ASYNC_DEASSERT || __reset_scheme__ == ASYNC_ASSERT_ASYNC_DEASSERT) begin
+185       #(async_delay * 1ns);
+186     end
+187 
+188     // Deassert reset
+189     deassert_reset(reset_port_num);
+190 
+191   endtask: apply_reset
+192 
+193   // Clock gen block
+194   initial begin
+195     if (__active_clk__) begin
+196       clk = 1'b0;
+197       forever begin
+198         if (__clk_enabled__) begin
+199           #(__clk_period_ns__ / 2.0) clk = ~clk;
+200         end else begin
+201           clk = 1'b0;
+202           wait(__clk_enabled__);
+203           if (get_clk_rise_on_enable()) clk = 1'b1;
+204         end
+205       end  // forever
+206     end // if (__active_clk__)
+207     else begin
+208       clk = 1'bz;
+209     end
+210   end  // initial
+211 
+212   // Reset gen block
+213   initial begin
+214     __internal_reset__ = {NUM_RESET_PORTS{1'b0}};
+215   end
+216 
+217   function automatic realtime get_clk_period_ns(input real i_freq_khz);
+218     return real'((1.0/i_freq_khz) * 1_000_000) * 1ns;
+219   endfunction: get_clk_period_ns
+220 
+221 endinterface: clk_rst_if
+222 
+223 `endif  // CLK_RST_IF_SV
+                                                                                                                                                                                                                                                                                                           223,3         Bot
+                                                                                                                                                                                                                                                                                                           223,3         Bot
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          1,3           Top
 
