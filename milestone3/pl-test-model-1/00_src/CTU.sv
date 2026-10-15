@@ -252,3 +252,155 @@ module mux21(
 );
   assign y = sel ? b : a;
 endmodule
+
+// clk_rst_if
+
+ 1 `ifndef CLK_RST_IF_SV
+  2 `define CLK_RST_IF_SV
+  3 
+  4 `timescale 1ns/1ps
+  5 
+  6 // verilog_lint: waive-start package-filename
+  7 package clk_rst_if_pkg;
+  8 
+  9   typedef enum bit [1:0] {
+ 10     SYNC_ASSERT_SYNC_DEASSERT   = 0,
+ 11     SYNC_ASSERT_ASYNC_DEASSERT  = 1,
+ 12     ASYNC_ASSERT_SYNC_DEASSERT  = 2,
+ 13     ASYNC_ASSERT_ASYNC_DEASSERT = 3
+ 14   } reset_scheme_e;
+ 15 
+ 16   typedef virtual interface clk_rst_if clk_rst_vif;
+ 17 
+ 18 endpackage: clk_rst_if_pkg
+ 19 // verilog_lint: waive-end
+ 20 
+ 21 interface clk_rst_if #(
+ 22     parameter string        NAME            = "clk_rst_if",
+ 23     parameter bit           ACTIVE_CLK      = 1,
+ 24     parameter int unsigned  NUM_RESET_PORTS = 16
+ 25 ) ( 
+ 26     input  logic                        clk_in,
+ 27     output logic                        clk,
+ 28     output logic [NUM_RESET_PORTS-1:0]  reset,
+ 29     output logic [NUM_RESET_PORTS-1:0]  reset_n
+ 30 );
+ 31 
+ 32   import clk_rst_if_pkg::*;
+ 33 
+ 34   string                      __name__               = NAME;
+ 35   bit                         __active_clk__         = ACTIVE_CLK;
+ 36   int unsigned                __num_reset_ports__    = NUM_RESET_PORTS;
+ 37   bit                         __clk_enabled__        = 0;
+ 38   real                        __clk_period_ns__      = 0;
+ 39   reset_scheme_e              __reset_scheme__       = SYNC_ASSERT_SYNC_DEASSERT;
+ 40   wire                        __internal_clk__       = 1'bz;
+ 41   logic [NUM_RESET_PORTS-1:0] __internal_reset__     = {NUM_RESET_PORTS{1'bz}};
+ 42   bit                         __clk_rise_on_enable__ = 1;
+ 43 
+ 44   assign reset            = __internal_reset__;
+ 45   assign reset_n          = ~reset;
+ 46   assign __internal_clk__ = (__active_clk__) ? clk : clk_in;
+ 47 
+ 48   clocking reset_cb@(posedge __internal_clk__);
+ 49     output __internal_reset__;
+ 50   endclocking: reset_cb
+ 51 
+ 52   function automatic string get_name();
+ 53     return __name__;
+ 54   endfunction: get_name
+ 55 
+ 56   function automatic int unsigned get_num_reset_ports();
+ 57     return __num_reset_ports__;
+ 58   endfunction: get_num_reset_ports
+ 59 
+ 60   function automatic void set_reset_scheme(input reset_scheme_e i_reset_scheme);
+ 61     $display("[%0s] Setting Reset Scheme to: %0s", __name__, __reset_scheme__.name());
+ 62     __reset_scheme__ = i_reset_scheme;
+ 63   endfunction: set_reset_scheme
+ 64 
+ 65   function automatic reset_scheme_e get_reset_scheme();
+ 66     return __reset_scheme__;
+ 67   endfunction: get_reset_scheme
+ 68 
+ 69   function automatic void set_freq_khz(input real i_freq_khz);
+ 70     if (__active_clk__) begin
+ 71       $display("[%0s] Setting Clock Frequency to: %0f kHz", __name__, i_freq_khz);
+ 72       __clk_period_ns__ = get_clk_period_ns(.i_freq_khz(i_freq_khz));
+ 73       $display("[%0s] Calculated Clock Period: %0f ns", __name__, __clk_period_ns__);
+ 74     end
+ 75     else begin
+ 76       $fatal(1, "[%0s] Cannot set clock frequency since this interface does not have active clock.", __name__);
+ 77     end
+ 78   endfunction: set_freq_khz
+ 79 
+ 80   function automatic void set_freq_mhz(input real i_freq_mhz);
+ 81     if (__active_clk__) begin
+ 82       $display("[%0s] Setting Clock Frequency to: %0f MHz", __name__, i_freq_mhz);
+ 83       __clk_period_ns__ = get_clk_period_ns(.i_freq_khz(i_freq_mhz*1000));
+ 84       $display("[%0s] Calculated Clock Period: %0f ns", __name__, __clk_period_ns__);
+ 85     end
+ 86     else begin
+ 87       $fatal(1, "[%0s] Cannot set clock frequency since this interface does not have active clock.", __name__);
+ 88     end
+ 89   endfunction: set_freq_mhz
+ 90 
+ 91   function automatic void enable_clk();
+ 92     if (__active_clk__) begin
+ 93       if (__clk_period_ns__ > 0) begin
+ 94         $display("[%0s] Enable Clock", __name__);
+ 95         __clk_enabled__ = 1;
+ 96       end else begin
+ 97         $fatal(1, "[%0s] Cannot enable clock when frequency is not set. Please use <clk_rst_if_name>.set_freq_<khz|mhz>() before enable_clk().", __name__);
+ 98       end
+ 99     end
+100     else begin
+101       $fatal(1, "[%0s] Cannot enable clock since this interface does not have active clock.", __name__);
+102     end
+103   endfunction: enable_clk
+104 
+105   function automatic void disable_clk();
+106     if (__active_clk__) begin
+107       $display("[%0s] Disable Clock", __name__);
+108       __clk_enabled__ = 0;
+109     end
+110     else begin
+111       $fatal(1, "[%0s] Cannot disable clock since this interface does not have active clock.", __name__);
+112     end
+113   endfunction: disable_clk
+114 
+115   function automatic void set_clk_rise_on_enable(bit enable=1);
+116     $display("[%0s] Set Clock Rise on Enable: %0d", __name__, enable);
+117     __clk_rise_on_enable__ = enable;
+118   endfunction: set_clk_rise_on_enable
+119 
+120   function automatic bit get_clk_rise_on_enable();
+121     return __clk_rise_on_enable__;
+122   endfunction: get_clk_rise_on_enable
+123 
+124   task automatic assert_reset(input int reset_port_num = -1);
+125     if (reset_port_num >= int'(__num_reset_ports__)) begin
+126       $fatal(1, "[%0s] Cannot assert reset to unexistent port number %0d. This interface only has reset port 0-%0d.", __name__, reset_port_num, (__num_reset_ports__ - 1));
+127     end
+128     $display("[%0s] Assert Reset", __name__);
+129     if (get_reset_scheme() inside {ASYNC_ASSERT_SYNC_DEASSERT, ASYNC_ASSERT_ASYNC_DEASSERT}) begin
+130       if (reset_port_num != -1) begin
+131         __internal_reset__[reset_port_num] <= 1'b1;
+132       end else begin
+133         __internal_reset__ <= {NUM_RESET_PORTS{1'b1}};
+134       end
+135     end
+136     else begin
+137       if (reset_port_num != -1) begin
+138         reset_cb.__internal_reset__[reset_port_num] <= 1'b1;
+139       end else begin
+140         reset_cb.__internal_reset__ <= {NUM_RESET_PORTS{1'b1}};
+141       end
+142     end
+143   endtask: assert_reset
+144 
+145   task automatic deassert_reset(input int reset_port_num = -1);
+146     if (reset_port_num >= int'(__num_reset_ports__)) begin
+147       $fatal(1, "[%0s] Cannot deassert reset to unexistent port number %0d. This interface only has reset port 0-%0d.", __name__, reset_port_num, (__num_reset_ports__ - 1));
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         1,3           Top
+
