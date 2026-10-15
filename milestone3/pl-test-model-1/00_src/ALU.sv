@@ -200,3 +200,173 @@ module SLL_SRL_SRA(
 // kiem tra cac bit is_sll, is_sra, is_srl co bat hay khong
 	mux2 #(32) KT_alu(.s0(a), .s1(s16), .sel(is_sll|is_sra|is_srl), .y(y));
 endmodule 
+
+
+// tb.vb
+
+ 1 `ifndef __GUARD_TB_SV__
+  2 `define __GUARD_TB_SV__
+  3 
+  4 // +--- Testbench Defines ---+
+  5 `include "tb_defines.svh"
+  6 
+  7 `resetall
+  8 `timescale 1ns/1ns
+  9 
+ 10 // +--- UVM ---+
+ 11 `include "uvm_macros.svh"
+ 12 
+ 13 `ifdef VCS_SIMULATOR
+ 14   `include "uvm_pkg.sv"
+ 15 `endif // VCS_SIMULATOR
+ 16 
+
+`endif // VCS_SIMULATOR
+ 16 
+ 17 // +--- Synopsys AMBA VIP Package ---+
+ 18 `ifdef SNPS_VIP_EN
+ 19   `ifdef XCELIUM_SIMULATOR
+ 20     `define UVM_PKG_SV // NOTE: Work-around for *E,DLCSMD
+ 21   `endif // XCELIUM_SIMULATOR
+ 22 `endif // SNPS_VIP_EN
+ 23 
+ 24 `ifdef SNPS_AXI_VIP_EN
+ 25   `timescale 1 ns/1 ps
+ 26   `include "svt_axi.uvm.pkg"
+ 27   `include "svt_axi_if.svi"
+ 28 `endif // SNPS_AXI_VIP_EN
+ 29 
+ 30 `ifdef SNPS_APB_VIP_EN
+ 31   `timescale 1 ns/1 ps
+ 32   `include "svt_apb.uvm.pkg"
+ 33   `include "svt_apb_if.svi"
+ 34 `endif // SNPS_APB_VIP_EN
+ 35 
+ 36 `include "tbr/SV/interfaces/all_if.sv"
+ 37 
+ 38 `include "tbr/tb_pkg.svh"
+ 39 
+ 40 module tb;
+ 41 
+ 42   import uvm_pkg::*;
+ 43   import tb_pkg::*;
+ 44   import all_if_pkg::*;
+ 45 `ifdef SNPS_AXI_VIP_EN
+ 46   import svt_axi_uvm_pkg::*;
+ 47 `endif // SNPS_AXI_VIP_EN
+ 48 `ifdef SNPS_APB_VIP_EN
+ 49   import svt_apb_uvm_pkg::*;
+ 50 `endif // SNPS_APB_VIP_EN
+ 51 
+ 52   // +--- Parameters ---+
+ 53 
+ 54   // +--- Top Interface ---+
+ 55   all_if all_if();
+ 56 
+ 57   // +--- DUT Instantiation & Connection ---+
+ 58   `include "tbr/tb_dut_connect.sv"
+ 59 
+ 60   // +--- VIP Connection ---+
+ 61 `ifdef SNPS_AXI_VIP_EN
+ 62   // Global
+ 63   assign all_if.axi_master_if.master_if[0].aclk    = 1'b0;
+ 64   assign all_if.axi_master_if.master_if[0].aresetn = 1'b0;
+ 65 
+ 66   // VIP Master - DUT Slave
+ 67   // AW CH
+ 68   always @(*) all_if.axi_master_if.master_if[0].awready = AWReady;
+ 69 `ifdef TB_AXI_MST_ID_WIDTH_0
+ 70 `else
+ 71   assign AWId    = all_if.axi_master_if.master_if[0].awid;
+ 72 `endif // TB_AXI_MST_ID_WIDTH_0
+ 73   assign AWAddr  = all_if.axi_master_if.master_if[0].awaddr;
+ 74   assign AWValid = all_if.axi_master_if.master_if[0].awvalid;
+ 75   assign AWLen   = all_if.axi_master_if.master_if[0].awlen;
+ 76   assign AWSize  = all_if.axi_master_if.master_if[0].awsize;
+ 77   assign AWBurst = all_if.axi_master_if.master_if[0].awburst;
+ 78   assign AWCache = all_if.axi_master_if.master_if[0].awcache;
+ 79   assign AWProt  = all_if.axi_master_if.master_if[0].awprot;
+ 80   assign AWLock  = all_if.axi_master_if.master_if[0].awlock;
+ 81 
+ 82   // W CH
+ 83   always @(*) all_if.axi_master_if.master_if[0].wready = WReady;
+ 84 
+ 85 `ifndef TB_AXI_MST_AXI4
+ 86 `ifndef TB_AXI_MST_ID_WIDTH_0
+ 87   assign WId    = all_if.axi_master_if.master_if[0].wid;
+ 88 `endif // TB_AXI_MST_ID_WIDTH_0
+ 89 `endif // TB_AXI_MST_AXI4
+ 90   assign WData  = all_if.axi_master_if.master_if[0].wdata;
+ 91   assign WStrb  = all_if.axi_master_if.master_if[0].wstrb;
+ 92   assign WValid = all_if.axi_master_if.master_if[0].wvalid;
+ 93 
+ 94   // B CH
+ 95   assign BReady = all_if.axi_master_if.master_if[0].bready;
+ 96 
+ 97   always @(*) all_if.axi_master_if.master_if[0].bid    = BId;
+ 98   always @(*) all_if.axi_master_if.master_if[0].bvalid = BValid;
+ 99 
+100   // AR CH
+101 `ifndef TB_AXI_MST_ID_WIDTH_0
+102   assign ARId    = all_if.axi_master_if.master_if[0].arid;
+103 `endif // TB_AXI_MST_ID_WIDTH_0
+104   assign ARAddr  = all_if.axi_master_if.master_if[0].araddr;
+105   assign ARLen   = all_if.axi_master_if.master_if[0].arlen;
+106   assign ARSize  = all_if.axi_master_if.master_if[0].arsize;
+107   assign ARBurst = all_if.axi_master_if.master_if[0].arburst;
+108   assign ARCache = all_if.axi_master_if.master_if[0].arcache;
+109   assign ARProt  = all_if.axi_master_if.master_if[0].arprot;
+110   assign ARLock  = all_if.axi_master_if.master_if[0].arlock;
+111   assign ARValid = all_if.axi_master_if.master_if[0].arvalid;
+112 
+113   always @(*) all_if.axi_master_if.master_if[0].arready = ARReady;
+114 
+115   // R CH
+116   assign RReady = all_if.axi_master_if.master_if[0].rready;
+117 
+118   always @(*) all_if.axi_master_if.master_if[0].rdata  = RData;
+119 `ifndef TB_AXI_MST_ID_WIDTH_0
+120   always @(*) all_if.axi_master_if.master_if[0].rid    = RId;
+121 `endif // TB_AXI_MST_ID_WIDTH_0
+122   always @(*) all_if.axi_master_if.master_if[0].rresp  = RResp;
+123   always @(*) all_if.axi_master_if.master_if[0].rlast  = RLast;
+124 `endif // SNPS_AXI_VIP_EN
+125 
+126 `ifdef SNPS_APB_VIP_EN
+127   always @(*) all_if.apb_slave_if.paddr   = PAddr;
+128   always @(*) all_if.apb_slave_if.pprot   = PProt;
+129   always @(*) all_if.apb_slave_if.pwrite  = PWrite;
+130   always @(*) all_if.apb_slave_if.pstrb   = PStrb;
+131   always @(*) all_if.apb_slave_if.pwdata  = PWData;
+132   always @(*) all_if.apb_slave_if.penable = PEnable;
+133   always @(*) all_if.apb_slave_if.psel    = {{31{1'b0}}, PSn_PSel[0]};
+134 
+135   assign PSn_PRData[0]  = all_if.apb_slave_if.slave_if[0].prdata;
+136   assign PSn_PSlverr[0] = all_if.apb_slave_if.slave_if[0].pslverr;
+137   assign PSn_PReady[0]  = all_if.apb_slave_if.slave_if[0].pready;
+138 
+139   generate
+140     for (genvar i = 1; i < `TB_APB_NUM_SLAVES; i += 1) begin: APB_SLV_TIE
+141       assign PSn_PRData[i]  = {`TB_APB_SLV_DATA_WIDTH{1'b0}};
+142       assign PSn_PSlverr[i] = 1'b0;
+143       assign PSn_PReady[i]  = 1'b0;
+144     end: APB_SLV_TIE
+145   endgenerate
+146 `endif // SNPS_APB_VIP_EN
+147 
+148   // +--- Simulation Time Monitor ---+
+149   initial begin
+150     realtime sim_time;
+151     realtime sim_timeout_ms;
+152 
+153     $timeformat(-9, 2, " ns");
+154     sim_time = 0;
+155 
+156     if (!($value$plusargs("sim_timeout_ms=%f", sim_timeout_ms))) begin
+157       sim_timeout_ms = 5ms;
+158     end
+159     else begin
+160       sim_timeout_ms = sim_timeout_ms * 1ms;
+161     end
+                                                                             
+
