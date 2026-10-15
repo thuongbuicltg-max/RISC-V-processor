@@ -46,3 +46,33 @@ module branch_predict (
     end
 
 endmodule 
+
+
+ 1 `ifndef __GUARD_SANITY_TEST_SV__
+  2 `define __GUARD_SANITY_TEST_SV__
+  3 
+  4 class sanity_test extends base_test;
+  5 
+  6   // +--- Factory Registration ---+
+  7   `uvm_component_utils(sanity_test)
+  8 
+  9   // +--- Constructor ---+
+ 10   function new(string name="sanity_test", uvm_component parent=null);
+ 11     super.new(name, parent);
+ 12   endfunction: new
+ 13 
+ 14   // +--- UVM Phases ---+
+ 15   virtual task run_phase(uvm_phase phase);
+ 16     super.run_phase(phase);
+ 17     phase.raise_objection(this);
+ 18     `uvm_info("TEST", $sformatf("Test --> Start"), UVM_NONE)
+ 19 
+ 20     #100ns;
+ 21 
+ 22     `uvm_info("TEST", $sformatf("Test --> End"), UVM_NONE)
+ 23     phase.drop_objection(this);
+ 24   endtask: run_phase
+ 25 
+ 26 endclass: sanity_test
+ 27 
+ 28 `endif // __GUARD_SANITY_TEST_SV__
