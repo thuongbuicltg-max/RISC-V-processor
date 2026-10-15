@@ -183,3 +183,37 @@ module hazard_unit (
 
 
 endmodule 
+
+
+  1 `ifndef __GUARD_APB_SLAVE_RANDOM_RESPONSE_SEQUENCE_SV__
+  2 `define __GUARD_APB_SLAVE_RANDOM_RESPONSE_SEQUENCE_SV__
+  3 
+  4 class apb_slave_random_response_sequence extends svt_apb_slave_base_sequence;
+  5 
+  6   // +--- Factory Registration ---+ 
+  7   `uvm_object_utils(apb_slave_random_response_sequence)
+  8 
+  9   // +--- Constructor ---+
+ 10   function new(string name="apb_slave_random_response_sequence");
+ 11     super.new(name);
+ 12   endfunction: new
+ 13 
+ 14   // +--- Functions/Tasks ---+
+ 15   virtual task body();
+ 16     forever begin
+ 17       p_sequencer.response_request_port.peek(req);
+ 18       if (req.cfg == null) begin
+ 19         req.cfg = cfg;
+ 20       end
+ 21 
+ 22 `ifndef SVT_UVM_1800_2_2017_OR_HIGHER
+ 23       `uvm_rand_send_with(req, { pslverr_enable == 1'b0; })
+ 24 `else
+ 25       `uvm_rand_send(req,, { pslverr_enable == 1'b0; })
+ 26 `endif
+ 27     end // forever
+ 28   endtask: body
+ 29 
+ 30 endclass: apb_slave_random_response_sequence
+ 31 
+ 32 `endif // __GUARD_APB_SLAVE_RANDOM_RESPONSE_SEQUENCE_SV__
